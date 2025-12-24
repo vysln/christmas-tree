@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Merry Christmas</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        // ================== 全局参数（对齐原Python代码） ==================
+        const WIDTH = window.innerWidth;
+        const HEIGHT = window.innerHeight;
+        const BLACK = [0, 0, 0];
+
+        // 粒子数量
+        const TREE_POINTS = 50000;
+        const GROUND_POINTS = 4000;
+        const STAR_POINTS = 1200;
+        const HEART_POINTS = 1000;
+        const SNOW2D_POINTS = 10;
+
+        // 相机参数
+        const CAM_DIST = 13;
+        const CAM_HEIGHT = 6.0;
+        const PITCH = -0.25;
+        const TREE_HEIGHT = 12.0;
+
+        // 画布和上下文
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = WIDTH;
+        canvas.height = HEIGHT;
+
+        // ================== 工具函数（替代Python内置函数） ==================
+        // 生成高斯分布随机数
+        function gauss(mean = 0, stdDev = 1) {
+            let u = 0, v = 0;
+            while(u === 0) u = Math.random();
+            while(v === 0) v = Math.random();
+            return mean + stdDev * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        // 随机整数
+        function randInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        // ================== 生成圣诞树粒子（修改为蓝色系） ==================
+        function genTreePoints() {
+            const pts = [];
+            const loops = 9;
+            const spiralN = Math.floor(TREE_POINTS * 0.7);
+
+            // 70% 螺旋灯带 - 蓝色渐变
+            for (let i = 0; i < spiralN; i++) {
+                const u = Math.random();
+                const h = Math.pow(u, 1.6);
+                const y = TREE_HEIGHT * h + 0.2;
+
+                let baseR = Math.pow(1 - h, 1.1) * 3.2;
+                const branchWave = Math.max(0.0, Math.sin((h * 5.8 + 0.15) * Math.PI * 2));
+                const branchFactor = 1.0 + 0.65 * branchWave;
+                baseR *= branchFactor;
+
+                const t = u * loops * Math.PI * 2;
+                const angle = t + (Math.random() * 0.44 - 0.22);
+                const r = baseR * (Math.random() * 0.23 + 0.85);
+
+                const x = Math.cos(angle) * r;
+                const z = Math.sin(angle) * r;
+
+                // 颜色修改：蓝色系渐变（中段更亮）
+                const midBoost = Math.max(0.15, 1.0 - Math.abs(h - 0.55) * 1.5);
+                const baseR_channel = 80 + Math.floor(70 * midBoost); // 红色通道降低
+                const baseG_channel = 150 + Math.floor(80 * midBoost); // 绿色通道适中
+                const baseB_channel = 220 + Math.floor(35 * midBoost); // 蓝色通道为主
+
+                let color = [
+                    Math.min(255, baseR_channel + randInt(-15, 20)),
+                    Math.min(255, baseG_channel + randInt(-15, 20)),
+                    Math.min(255, baseB_channel + randInt(-15, 35))
+                ];
+
+                // 点缀亮灯 - 浅蓝高亮
+                if (Math.random() < 0.08) {
+                    color = [180 + randInt(0, 35), 200 + randInt(0, 35), 255];
+                }
+
+                pts.push([x, y, z, color]);
+            }
+
+            // 30% 随机填充 - 蓝色系
+            const fillN = TREE_POINTS - spiralN;
+            for (let i = 0; i < fillN; i++) {
+                const h = Math.pow(Math.random(), 1.9);
+                const y = TREE_HEIGHT * h + 0.2 + (Math.random() * 0.16 - 0.08);
+
+                let baseR = Math.pow(1 - h, 1.1) * 4.3;
+                const branchWave = Math.max(0.0, Math.sin((h * 5.8 + 0.15) * Math.PI * 2));
+                const branchFactor = 1.0 + 0.65 * branchWave;
+                baseR *= branchFactor;
+
+                const r = baseR * Math.sqrt(Math.random());
+                const angle = Math.random() * Math.PI * 2;
+
+                const x = Math.cos(angle) * r + (Math.random() * 0.16 - 0.08);
+                const z = Math.sin(angle) * r + (Math.random() * 0.16 - 0.08);
+
+                // 颜色修改：纯蓝色系
+                const r_channel = randInt(70, 140);
+                const g_channel = randInt(140, 200);
+                const b_channel = randInt(200, 255);
+                const color = [r_channel, g_channel, b_channel];
+                pts.push([x, y, z, color]);
+            }
+
+            return pts;
+        }
+
+        // ================== 生成地面光环粒子（修改为深蓝色系） ==================
+        function genGroundPoints() {
+            const pts = [];
+            const rings = [4.6, 6.0, 7.4, 8.8, 10.2, 11.4];
+            for (let i = 0; i < GROUND_POINTS; i++) {
+                const ring = rings[Math.floor(Math.random() * rings.length)];
+                const r = gauss(ring, 0.3);
+                const theta = Math.random() * Math.PI * 2;
+                const x = Math.cos(theta) * r;
+                const z = Math.sin(theta) * r;
+                const y = -0.25;
+
+                let c;
+                if (Math.random() < 0.15) {
+                    c = randInt(200, 255); // 亮蓝色
+                } else {
+                    c = randInt(150, 200); // 深蓝色
+                }
+                // 颜色修改：蓝紫色调光环
+                const color = [80, 120, c];
+                pts.push([x, y, z, color]);
+            }
+            return pts;
+        }
+
+        // ================== 生成空中星星粒子（修改为浅蓝系） ==================
+        function genStarPoints() {
+            const pts = [];
+            for (let i = 0; i < STAR_POINTS; i++) {
+                const x = Math.random() * 36 - 18.0;
+                const z = Math.random() * 36 - 18.0;
+                const y = Math.random() * 15 + 3.0;
+                const base = randInt(200, 255);
+                // 颜色修改：浅蓝星星
+                const color = [60, 100, base];
+                pts.push([x, y, z, color]);
+            }
+            return pts;
+        }
+
+        // ================== 生成树顶爱心粒子（修改为蓝色爱心） ==================
+        function genHeartPoints() {
+            const pts = [];
+            const scale = 0.9;
+            const topY = TREE_HEIGHT + 0.05;
+
+            while (pts.length < HEART_POINTS) {
+                const x = Math.random() * 2.6 - 1.3;
+                const y = Math.random() * 2.8 - 1.4;
+
+                // 2D心形隐式方程
+                const f = Math.pow(x * x + y * y - 1.0, 3) - x * x * Math.pow(y, 3);
+
+                if (f <= 0.0) {
+                    const wx = x * scale * 0.8;
+                    const wy = topY + (y + 1.0) * scale * 0.5;
+                    const wz = Math.random() * 0.36 - 0.18;
+
+                    const dist = Math.hypot(x, y);
+                    const factor = Math.max(0.35, 1.15 - 0.5 * dist);
+                    // 颜色修改：蓝色爱心
+                    const r = Math.floor(70 * factor + 50);
+                    const g = Math.floor(130 * factor + 60);
+                    const b = Math.floor(255 * factor + 40);
+                    const color = [r, g, b];
+
+                    pts.push([wx, wy, wz, color]);
+                }
+            }
+            return pts;
+        }
+
+        // ================== 2D前景雪花（保留白色） ==================
+        function initSnow2d() {
+            const flakes = [];
+            for (let i = 0; i < SNOW2D_POINTS; i++) {
+                const x = Math.random() * WIDTH;
+                const y = Math.random() * 70 - 80;
+                const radius = Math.random() * 6 + 10.0;
+                const speed = Math.random() * 15 + 30.0;
+                const travel = HEIGHT + 80 - y;
+                const life = travel / speed;
+                const maxLife = life;
+                flakes.push([x, y, radius, speed, life, maxLife]);
+            }
+            return flakes;
+        }
+
+        function respawnFlake(f) {
+            const x = Math.random() * WIDTH;
+            const y = Math.random() * 70 - 80;
+            const radius = Math.random() * 6 + 10.0;
+            const speed = Math.random() * 15 + 30.0;
+            const travel = HEIGHT + 80 - y;
+            const life = travel / speed;
+            const maxLife = life;
+            f[0] = x;
+            f[1] = y;
+            f[2] = radius;
+            f[3] = speed;
+            f[4] = life;
+            f[5] = maxLife;
+        }
+
+        function updateSnow2d(flakes, dt) {
+            for (let i = 0; i < flakes.length; i++) {
+                const f = flakes[i];
+                f[1] += f[3] * dt;
+                f[4] -= dt;
+                if (f[4] <= 0 || f[1] > HEIGHT + 50) {
+                    respawnFlake(f);
+                }
+            }
+        }
+
+        function drawSnow2d(flakes) {
+            ctx.save();
+            for (let i = 0; i < flakes.length; i++) {
+                const [x, y, r, v, life, maxLife] = flakes[i];
+                if (maxLife <= 0) continue;
+
+                const phase = life / maxLife;
+                let alpha = phase > 0.3 ? 255 : Math.floor(255 * (phase / 0.3));
+                alpha = Math.max(0, Math.min(255, alpha));
+
+                const cx = Math.floor(x);
+                const cy = Math.floor(y);
+
+                const r1 = Math.max(1, Math.floor(r * 1.3));
+                const r2 = Math.max(1, Math.floor(r * 1.0));
+                const r3 = Math.max(1, Math.floor(r * 0.75));
+                const r4 = Math.max(1, Math.floor(r * 0.55));
+                const r5 = Math.max(1, Math.floor(r * 0.45));
+
+                const a1 = Math.floor(alpha / 20);
+                const a2 = Math.floor(alpha / 12);
+                const a3 = Math.floor(alpha / 6);
+                const a4 = Math.floor(alpha / 3);
+                const a5 = alpha;
+
+                // 绘制多层雪花（模拟透明度层级）
+                if (a1 > 0) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r1, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255,255,255,${a1/255})`;
+                    ctx.fill();
+                }
+                if (a2 > 0) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r2, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255,255,255,${a2/255})`;
+                    ctx.fill();
+                }
+                if (a3 > 0) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r3, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255,255,255,${a3/255})`;
+                    ctx.fill();
+                }
+                if (a4 > 0) {
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, r4, 0, Math.PI * 2);
+                    ctx.fillStyle = `rgba(255,255,255,${a4/255})`;
+                    ctx.fill();
+                }
+                ctx.beginPath();
+                ctx.arc(cx, cy, r5, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255,255,255,${a5/255})`;
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // ================== 3D -> 2D 投影（还原原Python逻辑） ==================
+        function projectPoint(x, y, z, angle) {
+            const cosA = Math.cos(angle);
+            const sinA = Math.sin(angle);
+            const xz = x * cosA - z * sinA;
+            const zz = x * sinA + z * cosA;
+
+            const cosP = Math.cos(PITCH);
+            const sinP = Math.sin(PITCH);
+            const yp = y * cosP - zz * sinP;
+            const zp = y * sinP + zz * cosP;
+
+            const zpFinal = zp + CAM_DIST;
+            const ypFinal = yp - CAM_HEIGHT;
+
+            if (zpFinal <= 0.1) return null;
+
+            const f = (HEIGHT * 0.63) / zpFinal;
+            const sx = Math.floor(WIDTH / 2 + xz * f);
+            const sy = Math.floor(HEIGHT / 2 - ypFinal * f);
+            const depth = zpFinal;
+            return [sx, sy, depth];
+        }
+
+        // ================== 主动画循环 ==================
+        function main() {
+            // 生成所有粒子
+            const tree = genTreePoints();
+            const ground = genGroundPoints();
+            const stars = genStarPoints();
+            const heart = genHeartPoints();
+            const snow2d = initSnow2d();
+
+            let angle = 0.0;
+            let lastTime = performance.now();
+
+            // 动画循环
+            function animate(currentTime) {
+                requestAnimationFrame(animate);
+                const dt = (currentTime - lastTime) / 1000.0;
+                lastTime = currentTime;
+
+                // 清空画布
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                // 更新雪花
+                updateSnow2d(snow2d, dt);
+
+                // 收集所有需要绘制的粒子
+                const drawList = [];
+                const allPoints = [...tree, ...ground, ...stars, ...heart];
+                for (let i = 0; i < allPoints.length; i++) {
+                    const [x, y, z, color] = allPoints[i];
+                    const proj = projectPoint(x, y, z, angle);
+                    if (proj) {
+                        const [sx, sy, depth] = proj;
+                        const size = Math.max(1, Math.floor(3.6 - depth * 0.13));
+                        drawList.push([depth, sx, sy, size, color]);
+                    }
+                }
+
+                // 按深度排序（远的先画，近的后画）
+                drawList.sort((a, b) => b[0] - a[0]);
+                for (let i = 0; i < drawList.length; i++) {
+                    const [_, sx, sy, size, color] = drawList[i];
+                    if (sx >= 0 && sx < WIDTH && sy >= 0 && sy < HEIGHT) {
+                        ctx.beginPath();
+                        ctx.arc(sx, sy, size, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+                        ctx.fill();
+                    }
+                }
+
+                // 绘制文字
+                ctx.font = '45px "Monotype Corsiva", cursive';
+                ctx.fillStyle = 'white';
+                ctx.fillText('Merry Christmas', 40, HEIGHT / 3);
+                ctx.fillText('Yao YuHong', 40, HEIGHT / 3 + 55);
+
+                // 绘制雪花
+                drawSnow2d(snow2d);
+
+                // 更新旋转角度
+                angle += 0.0045;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // 窗口大小适配
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // 启动主程序
+        main();
+    </script>
+</body>
+</html>
